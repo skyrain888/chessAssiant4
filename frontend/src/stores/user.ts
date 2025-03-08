@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import http from '@/utils/http';
+import { post, get, put } from '@/utils/http';
 import { Message } from '@arco-design/web-vue';
 
 // 用户状态接口
@@ -72,7 +72,7 @@ export const useUserStore = defineStore('user', () => {
   async function login(emailValue: string, password: string) {
     try {
       // 调用登录API
-      const response: any = await http.post('/auth/login', {
+      const response: any = await post('/auth/login', {
         email: emailValue,
         password
       });
@@ -94,7 +94,7 @@ export const useUserStore = defineStore('user', () => {
   async function register(userData: { username: string; email: string; password: string; name?: string }) {
     try {
       // 调用注册API
-      const response: any = await http.post('/auth/register', userData);
+      const response: any = await post('/auth/register', userData);
       
       // 设置用户信息
       setUserInfo(response.user);
@@ -113,7 +113,7 @@ export const useUserStore = defineStore('user', () => {
   async function logout() {
     try {
       if (token.value) {
-        await http.post('/auth/logout');
+        await post('/auth/logout');
       }
     } catch (error) {
       console.error('登出失败:', error);
@@ -135,7 +135,7 @@ export const useUserStore = defineStore('user', () => {
         return false;
       }
       
-      const response: any = await http.post('/auth/refresh', {
+      const response: any = await post('/auth/refresh', {
         refresh_token: refreshToken.value
       });
       
@@ -156,7 +156,7 @@ export const useUserStore = defineStore('user', () => {
         return false;
       }
       
-      const userData: any = await http.get('/user/profile');
+      const userData: any = await get('/user/profile');
       setUserInfo(userData);
       
       return true;
@@ -168,37 +168,32 @@ export const useUserStore = defineStore('user', () => {
 
   async function updateUserInfo(userData: { name?: string; avatar?: string }) {
     try {
-      const response: any = await http.put('/user/profile', userData);
+      const response: any = await put('/user/profile', userData);
       
       setUserInfo({
         ...userInfo.value,
-        ...response
+        ...userData
       });
       
-      Message.success('个人信息更新成功');
-      
-      return true;
+      return response;
     } catch (error) {
       console.error('更新用户信息失败:', error);
-      Message.error('更新个人信息失败');
-      return false;
+      throw error;
     }
   }
 
   async function changePassword(oldPassword: string, newPassword: string) {
     try {
-      await http.put('/user/password', {
+      await put('/user/password', {
         old_password: oldPassword,
         new_password: newPassword
       });
       
       Message.success('密码修改成功');
-      
       return true;
     } catch (error) {
       console.error('修改密码失败:', error);
-      Message.error('修改密码失败，请检查您的当前密码是否正确');
-      return false;
+      throw error;
     }
   }
 

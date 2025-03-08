@@ -1,4 +1,4 @@
-import { post } from '@/utils/request'
+import { post } from '@/utils/http'
 
 // 定义接口类型
 interface LoginParams {

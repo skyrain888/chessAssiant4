@@ -1,4 +1,4 @@
-import { get, post, put, del, upload } from '@/utils/request'
+import { get, post, put, del, upload } from '@/utils/http'
 
 // 定义接口类型
 interface ChessNotation {

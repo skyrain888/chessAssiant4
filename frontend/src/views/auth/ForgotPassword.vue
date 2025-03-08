@@ -46,7 +46,7 @@
 import { reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconEmail, IconLeft } from '@arco-design/web-vue/es/icon'
-import http from '@/utils/http'
+import { post } from '@/utils/http'
 
 // 表单数据
 const form = reactive({
@@ -67,7 +67,7 @@ const handleSubmit = async () => {
       loading.value = true
       
       // 调用忘记密码API
-      await http.post('/auth/forgot-password', { email: form.email })
+      await post('/auth/forgot-password', { email: form.email })
       
       // 显示成功消息
       Message.success('重置密码链接已发送到您的邮箱')

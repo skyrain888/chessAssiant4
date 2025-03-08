@@ -20,31 +20,27 @@
             <div class="header-divider"></div>
           </div>
           
-          <div class="upload-area">
-            <a-upload
-              action="/api/chess/upload"
-              :file-list="fileList"
-              :limit="1"
-              :show-file-list="false"
-              :accept="'image/*'"
-              :disabled="uploadLoading"
-              @before-upload="beforeUpload"
-              @success="onUploadSuccess"
-              @error="onUploadError"
-            >
-              <template #upload-button>
-                <div class="upload-trigger">
-                  <div v-if="!imageUrl" class="upload-placeholder">
-                    <icon-upload :style="{ fontSize: '32px' }" />
-                    <p class="mt-2">点击或拖拽上传棋谱图片</p>
-                    <p class="text-gray-400 text-xs mt-1">支持JPG、PNG格式</p>
-                  </div>
-                  <div v-else class="upload-preview">
-                    <img :src="imageUrl" alt="棋谱图片" class="preview-image" />
-                  </div>
-                </div>
-              </template>
-            </a-upload>
+          <div class="upload-area" @click="triggerFileInput" :class="{ 'is-loading': uploading }">
+            <div v-if="uploading" class="loading-spinner"></div>
+            <div v-else-if="fileList.length > 0" class="preview-container">
+              <img :src="previewUrl" alt="预览图" class="preview-image" />
+              <a-button type="primary" status="danger" size="small" class="remove-btn" @click.stop="removeImage">
+                <icon-delete />
+                删除
+              </a-button>
+            </div>
+            <div v-else class="upload-placeholder">
+              <icon-upload size="32" />
+              <div class="upload-text">点击或拖拽上传棋谱图片</div>
+              <div class="upload-hint">支持 JPG、PNG 格式</div>
+            </div>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/jpeg,image/png"
+              class="file-input"
+              @change="handleFileChange"
+            />
           </div>
           <div class="mt-4">
             <a-select v-model="selectedModel" placeholder="选择解析模型" style="width: 100%">
@@ -54,7 +50,7 @@
             </a-select>
           </div>
           <div class="mt-4">
-            <a-button type="primary" long :loading="parseLoading" :disabled="!imageUrl" @click="parseImage">
+            <a-button type="primary" long :loading="parseLoading" :disabled="!previewUrl" @click="parseImage">
               解析棋谱
             </a-button>
           </div>
@@ -102,6 +98,11 @@
         </a-card>
       </a-col>
     </a-row>
+
+    <div class="upload-result" v-if="uploadResult">
+      <div class="result-title">识别结果</div>
+      <div class="result-content">{{ uploadResult }}</div>
+    </div>
   </div>
 </template>
 
@@ -112,9 +113,10 @@ import { Message } from '@arco-design/web-vue'
 import {
   IconUpload,
   IconImage,
-  IconCodeBlock
+  IconCodeBlock,
+  IconDelete
 } from '@arco-design/web-vue/es/icon'
-import http from '@/utils/http'
+import { post, upload } from '@/utils/http'
 
 // 路由
 const router = useRouter()
@@ -125,8 +127,8 @@ const uploadLoading = ref(false)
 const parseLoading = ref(false)
 
 // 图片URL
-const imageUrl = ref('')
-const fileList = ref([])
+const previewUrl = ref('')
+const fileList = ref<any[]>([])
 
 // 选择的模型
 const selectedModel = ref('gpt-4-vision')
@@ -146,57 +148,140 @@ const form = reactive({
   tags: [] as string[]
 })
 
-// 上传前验证
-const beforeUpload = (file: File) => {
-  // 验证文件类型
-  if (!supportedImageFormats.includes(file.type)) {
-    Message.error(`不支持的文件类型: ${file.type}，请上传 JPG 或 PNG 格式的图片`)
-    return false
+// 文件输入引用
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+// 上传状态
+const uploading = ref(false)
+const uploadResult = ref('')
+
+// 触发文件输入点击
+const triggerFileInput = () => {
+  if (!uploading.value && fileInputRef.value) {
+    fileInputRef.value.click()
+  }
+}
+
+// 处理文件变化
+const handleFileChange = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  if (input.files && input.files.length > 0) {
+    const file = input.files[0]
+    
+    // 验证文件
+    if (!file.type.includes('image/')) {
+      Message.error('请上传图片文件')
+      return
+    }
+    
+    // 创建预览URL
+    previewUrl.value = URL.createObjectURL(file)
+    
+    // 调用上传函数
+    handleCustomUpload({ file })
+    
+    // 重置input，允许重新选择同一文件
+    input.value = ''
+  }
+}
+
+// 上传文件
+const handleCustomUpload = (options: any) => {
+  // 验证选项和文件
+  if (!options || !options.file) {
+    console.error('上传选项或文件不存在', options)
+    Message.error('上传文件不存在')
+    return () => {}
+  }
+
+  const file = options.file
+  
+  // 验证文件是否为File实例
+  if (!(file instanceof File)) {
+    console.error('上传的不是有效的文件对象', file)
+    Message.error('上传的不是有效的文件对象')
+    return () => {}
   }
   
   // 验证文件大小
-  const fileSize = file.size
-  if (fileSize > maxUploadSize) {
-    Message.error(`文件大小不能超过 5MB`)
-    return false
+  if (file.size === 0) {
+    console.error('文件大小为0', file)
+    Message.error('文件大小为0，请选择有效文件')
+    return () => {}
   }
+
+  // 更新文件列表状态
+  fileList.value = [{ 
+    uid: '1', 
+    name: file.name,
+    status: 'uploading'
+  }]
   
-  uploadLoading.value = true
-  return true
-}
+  uploading.value = true
+  uploadResult.value = ''
 
-// 上传成功处理
-const onUploadSuccess = (result: any) => {
-  uploadLoading.value = false
-  if (result && result.url) {
-    imageUrl.value = result.url
-    Message.success('图片上传成功')
-    
-    // 如果上传结果中包含自动解析的棋谱步骤
-    if (result.moves) {
-      form.moves = result.moves
-      Message.success('棋谱已自动解析')
+  // 使用http.ts中的upload方法
+  upload('/chess/upload', file, {
+    validateFileType: true,
+    fileTypes: supportedImageFormats,
+    validateFileSize: true,
+    maxSize: maxUploadSize / 1024 / 1024, // 转换为MB
+    onUploadProgress: (progressEvent: any) => {
+      if (progressEvent.lengthComputable) {
+        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+        console.log(`上传进度: ${percent}%`)
+      }
     }
-  }
-}
+  })
+    .then((response: any) => {
+      console.log('上传成功:', response)
+      
+      // 更新文件列表状态
+      fileList.value = [{ 
+        uid: '1', 
+        name: file.name,
+        status: 'done',
+        url: URL.createObjectURL(file)
+      }]
+      
+      // 显示识别结果
+      if (response.data && response.data.result) {
+        uploadResult.value = response.data.result
+      } else {
+        uploadResult.value = '识别成功，但未返回结果数据'
+      }
+      
+      Message.success('上传成功')
+    })
+    .catch((error: any) => {
+      console.error('上传失败:', error)
+      handleUploadError(error.message || '上传失败，请稍后重试')
+    })
+    .finally(() => {
+      uploading.value = false
+    })
 
-// 上传失败处理
-const onUploadError = () => {
-  uploadLoading.value = false
-  Message.error('图片上传失败')
+  // 返回中止上传的函数（注意：这里需要实现取消上传的功能）
+  return () => {
+    // 由于使用了http.ts的upload方法，这里需要调整取消逻辑
+    // 目前简化处理，仅重置状态
+    uploading.value = false
+    fileList.value = []
+    Message.info('上传已取消')
+  }
 }
 
 // 解析图片
 const parseImage = async () => {
-  if (!imageUrl.value) {
+  if (!previewUrl.value) {
     Message.error('请先上传图片')
     return
   }
 
   try {
     parseLoading.value = true
-    const response: any = await http.post('/chess/parse', {
-      image_url: imageUrl.value,
+    const response: any = await post('/chess/parse', {
+      image_url: previewUrl.value,
       model: selectedModel.value
     })
     
@@ -223,13 +308,13 @@ const handleSubmit = async () => {
 
   try {
     loading.value = true
-    const response: any = await http.post('/chess/notation', {
+    const response: any = await post('/chess/notation', {
       title: form.title,
       description: form.description,
       moves: form.moves,
       difficulty: form.difficulty,
       tags: form.tags,
-      image_url: imageUrl.value
+      image_url: previewUrl.value
     })
 
     if (response) {
@@ -251,8 +336,30 @@ const resetForm = () => {
   form.moves = ''
   form.difficulty = 'medium'
   form.tags = []
-  imageUrl.value = ''
+  previewUrl.value = ''
   fileList.value = []
+  uploadResult.value = ''
+}
+
+// 删除图片
+const removeImage = (e: Event) => {
+  e.stopPropagation()
+  fileList.value = []
+  uploadResult.value = ''
+  previewUrl.value = ''
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+}
+
+const handleUploadError = (message: string) => {
+  uploading.value = false
+  fileList.value = [{ 
+    uid: '1', 
+    name: fileList.value[0]?.name || '未知文件',
+    status: 'error'
+  }]
+  Message.error(message)
 }
 </script>
 
@@ -301,33 +408,57 @@ const resetForm = () => {
 
 .upload-area {
   width: 100%;
-  margin-bottom: 20px;
-}
-
-.upload-trigger {
-  width: 100%;
   height: 200px;
-  border: 2px dashed var(--color-border-2);
+  border: 2px dashed #c9cdd4;
   border-radius: 8px;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   cursor: pointer;
   transition: all 0.3s;
+  position: relative;
+  background-color: #f7f8fa;
+  overflow: hidden;
 }
 
-.upload-trigger:hover {
+.upload-area:hover {
   border-color: #165dff;
+  background-color: rgba(22, 93, 255, 0.05);
+}
+
+.upload-area.is-loading {
+  cursor: wait;
+  pointer-events: none;
 }
 
 .upload-placeholder {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   color: #86909c;
 }
 
-.upload-preview {
+.upload-text {
+  margin-top: 12px;
+  font-size: 16px;
+  color: #4e5969;
+}
+
+.upload-hint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #86909c;
+}
+
+.file-input {
+  display: none;
+}
+
+.preview-container {
   width: 100%;
   height: 100%;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -339,23 +470,50 @@ const resetForm = () => {
   object-fit: contain;
 }
 
-.mt-4 {
-  margin-top: 16px;
+.remove-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
 }
 
-.mt-2 {
-  margin-top: 8px;
+.upload-result {
+  margin-top: 24px;
+  padding: 16px;
+  border-radius: 8px;
+  background-color: #f7f8fa;
+  border: 1px solid #e5e6eb;
 }
 
-.mt-1 {
-  margin-top: 4px;
+.result-title {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  color: #1d2129;
 }
 
-.text-gray-400 {
-  color: #c9cdd4;
+.result-content {
+  white-space: pre-wrap;
+  font-family: monospace;
+  background-color: #ffffff;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid #e5e6eb;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
-.text-xs {
-  font-size: 12px;
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 16px;
+  border: 4px solid rgba(22, 93, 255, 0.2);
+  border-top: 4px solid #165dff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 </style> 

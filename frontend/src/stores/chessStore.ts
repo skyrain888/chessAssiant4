@@ -1,9 +1,30 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { post, get, upload } from '@/utils/request'
-import type { ChessNotation, QueryParams } from '@/types/custom-types'
+import { post, get, upload } from '@/utils/http'
 import config from '@/config/env'
-import { useNotification } from '@/composables/useNotification'
+import { Message } from '@arco-design/web-vue'
+
+// 定义类型
+interface ChessNotation {
+  id?: number;
+  title: string;
+  description?: string;
+  moves: string;
+  image_url?: string;
+  created_at?: string;
+  updated_at?: string;
+  user_id?: number;
+  tags?: string[];
+  difficulty?: 'easy' | 'medium' | 'hard';
+}
+
+interface QueryParams {
+  page: number;
+  size: number;
+  keyword?: string;
+  tags?: string[];
+  difficulty?: 'easy' | 'medium' | 'hard';
+}
 
 /**
  * 国际象棋状态管理
@@ -20,9 +41,6 @@ export const useChessStore = defineStore('chess', () => {
     page: 1,
     size: 10
   })
-
-  // 通知
-  const { success, error } = useNotification()
 
   // 计算属性
   const hasMore = computed(() => {
@@ -127,18 +145,25 @@ export const useChessStore = defineStore('chess', () => {
     try {
       uploadLoading.value = true
       
-      const response = await upload<{ image_url: string; moves?: string }>(
-        '/chess/upload',
-        file,
-        {
-          validateFileType: true,
-          fileTypes: config.supportedImageFormats,
-          validateFileSize: true,
-          maxSize: config.uploadSizeLimit
-        }
-      )
+      // 验证文件类型
+      const supportedImageFormats = config.getAllowedImageFormats()
+      if (!supportedImageFormats.includes(file.type.split('/')[1])) {
+        throw new Error(`不支持的文件类型: ${file.type}，请上传 JPG 或 PNG 格式的图片`)
+      }
       
-      return response
+      // 验证文件大小
+      const maxUploadSize = config.getMaxUploadSize() / (1024 * 1024) // 转换为MB
+      const fileSize = file.size / 1024 / 1024 // 转换为MB
+      if (fileSize > maxUploadSize) {
+        throw new Error(`文件大小不能超过 ${maxUploadSize}MB`)
+      }
+      
+      const result = await upload('/chess/upload', file, {
+        validateFileType: false, // 已经手动验证过
+        validateFileSize: false  // 已经手动验证过
+      })
+      
+      return result
     } catch (error) {
       console.error('上传图片失败:', error)
       throw error
