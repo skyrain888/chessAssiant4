@@ -1,0 +1,35 @@
+# 前端
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# 后端
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*/*/__pycache__/
+backend/*/*/*/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/venv/
+backend/.env
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# 编辑器和IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 操作系统
+.DS_Store
+Thumbs.db 

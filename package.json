@@ -1,0 +1,32 @@
+{
+  "name": "parent-assistant",
+  "version": "1.0.0",
+  "description": "家长助手应用 - 面向学生家长的工具集合平台",
+  "main": "index.js",
+  "scripts": {
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:preview": "cd frontend && npm run preview",
+    "backend:dev": "cd backend && python app.py",
+    "backend:test": "cd backend && pytest",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
+    "clean": "rimraf frontend/dist backend/__pycache__ **/*.pyc",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && flake8",
+    "lint": "npm run lint:frontend && npm run lint:backend"
+  },
+  "keywords": [
+    "parent",
+    "assistant",
+    "education",
+    "tools",
+    "chess"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "rimraf": "^5.0.5"
+  }
+} 

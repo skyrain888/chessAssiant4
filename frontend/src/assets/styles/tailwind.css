@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定义Tailwind工具类 */
+@layer utilities {
+  /* 文本截断 */
+  .text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 多行文本截断 */
+  .text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .text-truncate-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 卡片悬停效果 */
+  .hover-card-effect {
+    transition: all 0.3s ease;
+  }
+  
+  .hover-card-effect:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+  }
+
+  /* 渐变背景 */
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, #165DFF 0%, #4080FF 100%);
+  }
+
+  .bg-gradient-success {
+    background: linear-gradient(135deg, #00B42A 0%, #23C343 100%);
+  }
+
+  .bg-gradient-warning {
+    background: linear-gradient(135deg, #FF7D00 0%, #FF9A2E 100%);
+  }
+
+  .bg-gradient-danger {
+    background: linear-gradient(135deg, #F53F3F 0%, #F76560 100%);
+  }
+} 
