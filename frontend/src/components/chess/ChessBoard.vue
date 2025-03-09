@@ -61,6 +61,7 @@ interface ChessMove {
   piece: ChessPiece
   captured?: ChessPiece
   promotion?: 'queen' | 'rook' | 'bishop' | 'knight'
+  notation?: string // 添加代数记号
 }
 
 // 定义棋盘坐标
@@ -104,7 +105,7 @@ const props = defineProps({
 })
 
 // 定义事件
-const emit = defineEmits(['move', 'select-piece', 'board-ready'])
+const emit = defineEmits(['move', 'select-piece', 'board-ready', 'invalid-move'])
 
 // 棋盘状态
 const board = ref<ChessBoard>({})
@@ -208,6 +209,165 @@ const isPlayerTurn = (color: string | undefined): boolean => {
   return color === currentTurn.value
 }
 
+// 验证移动是否合法
+const isValidMove = (from: { row: number; col: number }, to: { row: number; col: number }, piece: ChessPiece): boolean => {
+  // 如果不是练习模式，允许任何移动（用于演示）
+  if (!props.isPracticeMode) {
+    return true
+  }
+  
+  // 不能移动到相同位置
+  if (from.row === to.row && from.col === to.col) {
+    return false
+  }
+  
+  // 不能吃自己的棋子
+  const targetPiece = getPiece(to.row, to.col)
+  if (targetPiece && targetPiece.color === piece.color) {
+    return false
+  }
+  
+  // 根据棋子类型验证移动
+  switch (piece.type) {
+    case 'pawn':
+      return isValidPawnMove(from, to, piece)
+    case 'knight':
+      return isValidKnightMove(from, to)
+    case 'bishop':
+      return isValidBishopMove(from, to)
+    case 'rook':
+      return isValidRookMove(from, to)
+    case 'queen':
+      return isValidQueenMove(from, to)
+    case 'king':
+      return isValidKingMove(from, to)
+    default:
+      return false
+  }
+}
+
+// 验证兵的移动
+const isValidPawnMove = (from: { row: number; col: number }, to: { row: number; col: number }, piece: ChessPiece): boolean => {
+  const direction = piece.color === 'white' ? -1 : 1 // 白兵向上移动，黑兵向下移动
+  const startRow = piece.color === 'white' ? 7 : 2 // 白兵起始行是7，黑兵起始行是2
+  
+  // 前进一格
+  if (to.col === from.col && to.row === from.row + direction && !getPiece(to.row, to.col)) {
+    return true
+  }
+  
+  // 起始位置可以前进两格
+  if (from.row === startRow && to.col === from.col && to.row === from.row + 2 * direction && 
+      !getPiece(from.row + direction, from.col) && !getPiece(to.row, to.col)) {
+    return true
+  }
+  
+  // 斜向吃子
+  if (Math.abs(to.col - from.col) === 1 && to.row === from.row + direction) {
+    const targetPiece = getPiece(to.row, to.col)
+    if (targetPiece && targetPiece.color !== piece.color) {
+      return true
+    }
+    // TODO: 过路兵规则
+  }
+  
+  return false
+}
+
+// 验证马的移动
+const isValidKnightMove = (from: { row: number; col: number }, to: { row: number; col: number }): boolean => {
+  const rowDiff = Math.abs(to.row - from.row)
+  const colDiff = Math.abs(to.col - from.col)
+  
+  // 马走"日"字
+  return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2)
+}
+
+// 验证象的移动
+const isValidBishopMove = (from: { row: number; col: number }, to: { row: number; col: number }): boolean => {
+  const rowDiff = Math.abs(to.row - from.row)
+  const colDiff = Math.abs(to.col - from.col)
+  
+  // 象走斜线
+  if (rowDiff !== colDiff) {
+    return false
+  }
+  
+  // 检查路径上是否有其他棋子
+  const rowDirection = to.row > from.row ? 1 : -1
+  const colDirection = to.col > from.col ? 1 : -1
+  
+  for (let i = 1; i < rowDiff; i++) {
+    const checkRow = from.row + i * rowDirection
+    const checkCol = from.col + i * colDirection
+    if (getPiece(checkRow, checkCol)) {
+      return false
+    }
+  }
+  
+  return true
+}
+
+// 验证车的移动
+const isValidRookMove = (from: { row: number; col: number }, to: { row: number; col: number }): boolean => {
+  // 车走直线
+  if (from.row !== to.row && from.col !== to.col) {
+    return false
+  }
+  
+  // 检查路径上是否有其他棋子
+  if (from.row === to.row) {
+    // 水平移动
+    const start = Math.min(from.col, to.col) + 1
+    const end = Math.max(from.col, to.col)
+    for (let col = start; col < end; col++) {
+      if (getPiece(from.row, col)) {
+        return false
+      }
+    }
+  } else {
+    // 垂直移动
+    const start = Math.min(from.row, to.row) + 1
+    const end = Math.max(from.row, to.row)
+    for (let row = start; row < end; row++) {
+      if (getPiece(row, from.col)) {
+        return false
+      }
+    }
+  }
+  
+  return true
+}
+
+// 验证后的移动
+const isValidQueenMove = (from: { row: number; col: number }, to: { row: number; col: number }): boolean => {
+  // 后可以走直线或斜线
+  return isValidRookMove(from, to) || isValidBishopMove(from, to)
+}
+
+// 验证王的移动
+const isValidKingMove = (from: { row: number; col: number }, to: { row: number; col: number }): boolean => {
+  const rowDiff = Math.abs(to.row - from.row)
+  const colDiff = Math.abs(to.col - from.col)
+  
+  // 王只能移动一格（暂不考虑王车易位）
+  return rowDiff <= 1 && colDiff <= 1
+}
+
+// 将棋盘坐标转换为代数记号
+const toAlgebraicNotation = (row: number, col: number): string => {
+  return files[col - 1] + ranks[row - 1]
+}
+
+// 生成移动的代数记号
+const generateMoveNotation = (move: ChessMove): string => {
+  const from = toAlgebraicNotation(move.from.row, move.from.col)
+  const to = toAlgebraicNotation(move.to.row, move.to.col)
+  
+  // 简单的代数记号
+  return from + to
+}
+
 // 处理格子点击事件
 const handleCellClick = (row: number, col: number) => {
   const clickedPiece = getPiece(row, col)
@@ -231,6 +391,18 @@ const handleCellClick = (row: number, col: number) => {
     
     // 尝试移动棋子
     if (selectedPiece) {
+      // 验证移动是否合法
+      if (!isValidMove(selectedCell.value, { row, col }, selectedPiece)) {
+        emit('invalid-move', {
+          from: selectedCell.value,
+          to: { row, col },
+          piece: selectedPiece,
+          message: '无效的移动'
+        })
+        selectedCell.value = null
+        return
+      }
+      
       const move: ChessMove = {
         from: { row: selectedCell.value.row, col: selectedCell.value.col },
         to: { row, col },
@@ -238,27 +410,40 @@ const handleCellClick = (row: number, col: number) => {
         captured: clickedPiece ? { ...clickedPiece } : undefined
       }
       
-      // 在实际应用中，这里应该验证移动是否合法
+      // 生成代数记号
+      move.notation = generateMoveNotation(move)
       
-      // 更新棋盘
-      board.value[`${row}-${col}`] = {
-        ...selectedPiece,
-        position: { row, col }
+      // 在练习模式下，先触发移动事件，让父组件验证是否符合棋谱
+      if (props.isPracticeMode) {
+        // 先触发移动事件，让父组件验证
+        emit('move', {
+          ...move,
+          isValid: true, // 默认为有效，由父组件判断是否符合棋谱
+          apply: (isValid: boolean) => {
+            if (isValid) {
+              // 如果移动有效，更新棋盘
+              applyMove(move)
+            }
+            // 如果无效，不更新棋盘，只取消选择
+            else {
+              selectedCell.value = null
+            }
+          }
+        })
+      } else {
+        // 非练习模式，直接应用移动
+        applyMove(move)
+        // 触发移动事件
+        emit('move', move)
       }
-      board.value[`${selectedCell.value.row}-${selectedCell.value.col}`] = null
-      
-      // 更新状态
-      lastMove.value = move
-      moveHistory.value.push(move)
-      selectedCell.value = null
-      currentTurn.value = currentTurn.value === 'white' ? 'black' : 'white'
-      
-      // 触发移动事件
-      emit('move', move)
     }
   } else if (clickedPiece) {
     // 如果是练习模式，只能移动当前回合的棋子
     if (props.isPracticeMode && clickedPiece.color !== currentTurn.value) {
+      emit('invalid-move', {
+        piece: clickedPiece,
+        message: `现在是${currentTurn.value === 'white' ? '白' : '黑'}方回合`
+      })
       return
     }
     
@@ -266,6 +451,22 @@ const handleCellClick = (row: number, col: number) => {
     selectedCell.value = { row, col }
     emit('select-piece', { row, col, piece: clickedPiece })
   }
+}
+
+// 应用移动到棋盘
+const applyMove = (move: ChessMove) => {
+  // 更新棋盘
+  board.value[`${move.to.row}-${move.to.col}`] = {
+    ...move.piece,
+    position: { row: move.to.row, col: move.to.col }
+  }
+  board.value[`${move.from.row}-${move.from.col}`] = null
+  
+  // 更新状态
+  lastMove.value = move
+  moveHistory.value.push(move)
+  selectedCell.value = null
+  currentTurn.value = currentTurn.value === 'white' ? 'black' : 'white'
 }
 
 // 处理拖拽开始事件
@@ -417,26 +618,28 @@ defineExpose({
 .file-labels {
   display: flex;
   justify-content: space-around;
-  padding: 0 calc(100% / 16);
   width: 100%;
   position: absolute;
   bottom: -25px;
+  left: 0;
+  padding: 0 calc(100% / 16);
 }
 
 .rank-labels {
   display: flex;
   flex-direction: column;
   justify-content: space-around;
-  padding: calc(100% / 16) 0;
   height: 100%;
   position: absolute;
   left: -25px;
   top: 0;
+  padding: calc(100% / 16) 0;
 }
 
 .file-labels span, .rank-labels span {
   font-size: 14px;
   color: #666;
+  font-weight: bold;
 }
 
 /* 练习模式样式 */

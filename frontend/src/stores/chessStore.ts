@@ -9,7 +9,7 @@ interface ChessNotation {
   id?: number;
   title: string;
   description?: string;
-  moves: string;
+  moves: string | string[]; // 可以是字符串或字符串数组
   image_url?: string;
   created_at?: string;
   updated_at?: string;
@@ -105,13 +105,59 @@ export const useChessStore = defineStore('chess', () => {
   const getNotationById = async (id: number) => {
     try {
       loading.value = true
-      const response = await get<ChessNotation>(`/api/chess/notations/${id}`)
+      const response = await get<any>(`/api/chess/notations/${id}`)
+      
+      console.log('获取棋谱详情响应:', response)
+      
+      // 处理不同的响应格式
+      let notationData: ChessNotation | null = null
       
       if (response) {
-        currentNotation.value = response
+        // 标准格式：{ code: 200, data: {...}, message: '...' }
+        if (response.code === 200 && response.data) {
+          notationData = response.data
+        } 
+        // 直接返回对象
+        else if (response.id && response.title && response.moves) {
+          notationData = response
+        }
+        
+        if (notationData) {
+          // 确保tags字段是数组
+          if (!notationData.tags) {
+            notationData.tags = []
+          } else if (typeof notationData.tags === 'string') {
+            try {
+              notationData.tags = JSON.parse(notationData.tags as any)
+            } catch (e) {
+              notationData.tags = []
+            }
+          }
+          
+          // 处理moves字段
+          if (notationData.moves) {
+            // 如果moves是字符串形式的JSON数组，尝试解析它
+            if (typeof notationData.moves === 'string' && 
+                (notationData.moves.startsWith('[') || notationData.moves.startsWith('"['))) {
+              try {
+                // 尝试解析JSON字符串
+                const parsedMoves = JSON.parse(notationData.moves);
+                if (Array.isArray(parsedMoves)) {
+                  notationData.moves = parsedMoves;
+                  console.log('成功将moves字符串解析为数组:', parsedMoves);
+                }
+              } catch (e) {
+                console.warn('解析moves字段失败，保持原始字符串:', e);
+              }
+            }
+          }
+          
+          currentNotation.value = notationData
+          return notationData
+        }
       }
       
-      return response
+      throw new Error('无法解析棋谱数据')
     } catch (error) {
       console.error('获取棋谱详情失败:', error)
       throw error
