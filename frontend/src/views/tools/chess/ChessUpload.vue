@@ -107,9 +107,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import {
   IconUpload,
   IconImage,
@@ -117,6 +117,7 @@ import {
   IconDelete
 } from '@arco-design/web-vue/es/icon'
 import { post, upload } from '@/utils/http'
+import { isLoggedIn } from '@/utils/auth'
 
 // 路由
 const router = useRouter()
@@ -154,6 +155,21 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 // 上传状态
 const uploading = ref(false)
 const uploadResult = ref('')
+
+// 在组件挂载时检查登录状态
+onMounted(() => {
+  // 检查用户是否已登录，如果未登录，提示用户登录
+  if (!isLoggedIn()) {
+    Modal.warning({
+      title: '需要登录',
+      content: '请先登录后再使用此功能',
+      okText: '去登录',
+      onOk: () => {
+        router.push('/auth/login?redirect=' + encodeURIComponent(router.currentRoute.value.fullPath))
+      }
+    })
+  }
+})
 
 // 触发文件输入点击
 const triggerFileInput = () => {
@@ -221,7 +237,7 @@ const handleCustomUpload = (options: any) => {
   uploadResult.value = ''
 
   // 使用http.ts中的upload方法
-  upload('/chess/upload', file, {
+  upload('/api/chess/upload', file, {
     validateFileType: true,
     fileTypes: supportedImageFormats,
     validateFileSize: true,
@@ -244,8 +260,18 @@ const handleCustomUpload = (options: any) => {
         url: URL.createObjectURL(file)
       }]
       
-      // 显示识别结果
-      if (response.data && response.data.result) {
+      // 根据实际接口返回格式处理数据
+      if (response && response.code === 200 && response.data && response.data.moves) {
+        // 如果返回了标准格式的数据
+        uploadResult.value = response.data.moves
+        // 同时更新表单中的棋谱步骤
+        form.moves = response.data.moves
+      } else if (response && response.moves) {
+        // 兼容直接返回 moves 字段的格式
+        uploadResult.value = response.moves
+        form.moves = response.moves
+      } else if (response && response.data && response.data.result) {
+        // 兼容旧的返回格式
         uploadResult.value = response.data.result
       } else {
         uploadResult.value = '识别成功，但未返回结果数据'
@@ -277,23 +303,141 @@ const parseImage = async () => {
     Message.error('请先上传图片')
     return
   }
+  
+  // 检查用户是否已登录
+  const token = localStorage.getItem('token')
+  console.log('当前登录状态:', isLoggedIn(), '令牌:', token ? '已存在' : '不存在')
+  
+  if (!isLoggedIn()) {
+    Modal.warning({
+      title: '需要登录',
+      content: '请先登录后再使用解析功能',
+      okText: '去登录',
+      onOk: () => {
+        router.push('/auth/login?redirect=' + encodeURIComponent(router.currentRoute.value.fullPath))
+      }
+    })
+    return
+  }
 
   try {
     parseLoading.value = true
-    const response: any = await post('/chess/parse', {
-      image_url: previewUrl.value,
-      model: selectedModel.value
+    
+    // 获取当前选择的文件
+    const currentFile = fileList.value[0]
+    if (!currentFile) {
+      Message.error('文件不存在，请重新上传')
+      return
+    }
+    
+    console.log('开始解析棋谱，当前文件:', currentFile)
+    
+    // 创建FormData对象
+    const formData = new FormData()
+    
+    let file = null
+    
+    // 从fileInputRef中获取实际的文件对象
+    if (fileInputRef.value && fileInputRef.value.files && fileInputRef.value.files.length > 0) {
+      file = fileInputRef.value.files[0]
+      console.log('从fileInputRef获取到文件:', file.name, file.type, file.size)
+    } else {
+      // 如果无法从input获取文件，尝试从URL获取
+      try {
+        console.log('尝试从URL获取文件:', previewUrl.value)
+        const response = await fetch(previewUrl.value)
+        const blob = await response.blob()
+        file = new File([blob], currentFile.name || 'image.png', { type: blob.type })
+        console.log('从URL创建文件成功:', file.name, file.type, file.size)
+      } catch (error) {
+        console.error('无法获取图片文件:', error)
+        Message.error('无法获取图片文件，请重新上传')
+        return
+      }
+    }
+    
+    // 添加文件到FormData
+    formData.append('file', file)
+    
+    // 添加模型参数
+    formData.append('model', selectedModel.value)
+    
+    console.log('发送解析请求，模型:', selectedModel.value)
+    
+    // 使用axios直接发送请求，确保包含Authorization头
+    const token = localStorage.getItem('token')
+    console.log('发送请求前的令牌:', token ? '已存在' : '不存在')
+    
+    // 直接使用axios发送请求，确保正确设置Authorization头
+    const axios = (await import('axios')).default
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'
+    
+    console.log('使用axios直接发送请求到:', `${apiBaseUrl}/api/chess/parse`)
+    console.log('Authorization头:', `Bearer ${token}`)
+    
+    const axiosResponse = await axios.post(`${apiBaseUrl}/api/chess/parse`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${token}`
+      }
     })
     
-    if (response && response.moves) {
+    console.log('axios响应状态:', axiosResponse.status)
+    console.log('axios响应头:', axiosResponse.headers)
+    console.log('axios响应数据:', axiosResponse.data)
+    
+    const response = axiosResponse.data
+    
+    // 根据实际接口返回格式处理数据
+    if (response && response.code === 200 && response.data && response.data.moves) {
+      // 设置棋谱步骤
+      form.moves = response.data.moves
+      // 同时设置识别结果，显示在界面上
+      uploadResult.value = response.data.moves
+      Message.success('棋谱解析成功')
+    } else if (response && response.moves) {
+      // 直接返回moves字段的格式
       form.moves = response.moves
+      uploadResult.value = response.moves
       Message.success('棋谱解析成功')
     } else {
+      console.error('解析响应格式不正确:', response)
       Message.error('棋谱解析失败，请重试')
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('解析棋谱失败:', err)
-    Message.error('解析棋谱失败')
+    // 显示更详细的错误信息
+    if (err.response) {
+      console.error('错误响应状态码:', err.response.status)
+      console.error('错误响应数据:', err.response.data)
+      console.error('错误响应头:', err.response.headers)
+      
+      // 如果是401错误，提示用户登录
+      if (err.response.status === 401) {
+        Modal.warning({
+          title: '登录已过期',
+          content: '您的登录已过期，请重新登录',
+          okText: '去登录',
+          onOk: () => {
+            // 清除过期的令牌
+            localStorage.removeItem('token')
+            localStorage.removeItem('refreshToken')
+            router.push('/auth/login?redirect=' + encodeURIComponent(router.currentRoute.value.fullPath))
+          }
+        })
+      } else if (err.response.status === 422) {
+        // 422错误可能是请求格式问题，而不是登录问题
+        console.error('请求验证失败，详细信息:', err.response.data)
+        Message.error(`请求验证失败: ${err.response.data?.message || '请检查上传的文件格式和大小'}`)
+      } else {
+        Message.error(`解析棋谱失败: ${err.response.data?.message || err.message || '未知错误'}`)
+      }
+    } else if (err.request) {
+      console.error('请求错误:', err.request)
+      Message.error('网络请求失败，请检查网络连接')
+    } else {
+      Message.error(`解析棋谱失败: ${err.message || '未知错误'}`)
+    }
   } finally {
     parseLoading.value = false
   }
@@ -305,10 +449,23 @@ const handleSubmit = async () => {
     Message.error('请填写必填字段')
     return
   }
+  
+  // 检查用户是否已登录
+  if (!isLoggedIn()) {
+    Modal.warning({
+      title: '需要登录',
+      content: '请先登录后再保存棋谱',
+      okText: '去登录',
+      onOk: () => {
+        router.push('/auth/login?redirect=' + encodeURIComponent(router.currentRoute.value.fullPath))
+      }
+    })
+    return
+  }
 
   try {
     loading.value = true
-    const response: any = await post('/chess/notation', {
+    const response: any = await post('/api/chess/notations', {
       title: form.title,
       description: form.description,
       moves: form.moves,
@@ -321,9 +478,32 @@ const handleSubmit = async () => {
       Message.success('棋谱保存成功')
       router.push('/chess/list')
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('保存棋谱失败:', err)
-    Message.error('保存棋谱失败')
+    
+    // 显示更详细的错误信息
+    if (err.response) {
+      console.error('错误响应:', err.response.status, err.response.data)
+      
+      // 如果是401或422错误，提示用户登录
+      if (err.response.status === 401 || err.response.status === 422) {
+        Modal.warning({
+          title: '需要登录',
+          content: '请先登录后再保存棋谱',
+          okText: '去登录',
+          onOk: () => {
+            router.push('/auth/login?redirect=' + encodeURIComponent(router.currentRoute.value.fullPath))
+          }
+        })
+      } else {
+        Message.error(`保存棋谱失败: ${err.response.data?.message || err.message || '未知错误'}`)
+      }
+    } else if (err.request) {
+      console.error('请求错误:', err.request)
+      Message.error('网络请求失败，请检查网络连接')
+    } else {
+      Message.error(`保存棋谱失败: ${err.message || '未知错误'}`)
+    }
   } finally {
     loading.value = false
   }

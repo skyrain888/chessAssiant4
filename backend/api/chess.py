@@ -20,7 +20,7 @@ chess_bp = Blueprint('chess', __name__)
 # 路由：上传棋谱图片
 @chess_bp.route('/upload', methods=['POST'])
 # 暂时注释掉JWT认证要求，用于测试
-# @jwt_required()
+
 def upload_chess_image():
     # 如果有JWT认证，则获取用户ID，否则使用默认值
     try:
@@ -94,42 +94,104 @@ def upload_chess_image():
         
         print("图片URL:", image_url)
         
-        # 这里可以调用大模型API解析棋谱，但为简化处理，返回空moves
+        # 尝试调用AI解析棋谱
+        moves = ""
+        try:
+            # 获取默认模型
+            default_model = current_app.config.get('AI_MODEL', 'gpt-4-vision')
+            # 调用AI解析棋谱
+            moves = parse_chess_notation(file_path, default_model, is_file_path=True)
+            print("AI解析结果:", moves)
+        except Exception as e:
+            print("AI解析失败:", str(e))
+            # 解析失败不影响上传，只是返回空的moves
+            moves = ""
+        
         return make_response({
             "image_url": image_url,
-            "moves": ""
+            "moves": moves
         })
 
 # 路由：解析棋谱
 @chess_bp.route('/parse', methods=['POST'])
 @jwt_required()
 def parse_notation():
+    # 获取用户ID
     user_id = get_jwt_identity()
-    data = request.json
+    current_app.logger.info(f"解析棋谱请求，用户ID: {user_id}")
     
-    image_url = data.get('image_url')
-    model = data.get('model', 'gpt-4-vision')
+    # 检查请求中的文件
+    if 'file' not in request.files:
+        current_app.logger.error("解析棋谱请求中未找到文件")
+        return make_response(None, "未找到文件", 400)
     
-    if not image_url:
-        return make_response(None, "图片URL不能为空", 400)
+    file = request.files['file']
+    
+    if file.filename == '':
+        current_app.logger.error("解析棋谱请求中未选择文件")
+        return make_response(None, "未选择文件", 400)
+    
+    # 获取模型参数
+    model = request.form.get('model', 'gpt-4-vision')
+    current_app.logger.info(f"使用模型: {model}, 文件名: {file.filename}")
     
     try:
-        # 调用AI解析棋谱
-        moves = parse_chess_notation(image_url, model)
+        # 保存上传的文件到临时目录
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+        file.save(temp_path)
+        current_app.logger.info(f"文件已保存到临时路径: {temp_path}")
+        
+        # 调用AI解析棋谱，传入文件路径而不是URL
+        moves = parse_chess_notation(temp_path, model, is_file_path=True)
+        current_app.logger.info(f"棋谱解析成功，步骤数: {len(moves.split()) if moves else 0}")
+        
+        # 解析完成后删除临时文件
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            current_app.logger.info(f"临时文件已删除: {temp_path}")
+            
         return make_response({
             "moves": moves
         })
     except Exception as e:
         current_app.logger.error(f"解析棋谱失败: {str(e)}")
-        return make_response(None, f"解析棋谱失败: {str(e)}", 500)
+        # 确保临时文件被删除
+        try:
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
+                current_app.logger.info(f"异常处理中删除临时文件: {temp_path}")
+        except Exception as cleanup_error:
+            current_app.logger.error(f"删除临时文件失败: {str(cleanup_error)}")
+        
+        # 返回更详细的错误信息
+        error_message = str(e)
+        error_code = 500
+        
+        # 根据错误类型返回不同的状态码
+        if "权限不足" in error_message or "未授权" in error_message:
+            error_code = 403
+        elif "验证失败" in error_message:
+            error_code = 422
+        elif "未找到" in error_message:
+            error_code = 404
+        
+        return make_response(None, f"解析棋谱失败: {error_message}", error_code)
 
 # 路由：创建棋谱
 @chess_bp.route('/notations', methods=['POST'])
 @jwt_required()
 def create_chess_notation():
-    user_id = get_jwt_identity()
-    data = request.json
+    """创建新的棋谱"""
+    # 获取用户ID，确保是字符串形式
+    current_user_id = get_jwt_identity()
+    current_app.logger.info(f"创建棋谱请求，用户ID: {current_user_id}, 类型: {type(current_user_id)}")
     
+    # 获取请求数据
+    data = request.json
+    current_app.logger.debug(f"请求数据: {data}")
+    
+    # 提取字段
     title = data.get('title')
     description = data.get('description', '')
     moves = data.get('moves')
@@ -137,10 +199,15 @@ def create_chess_notation():
     difficulty = data.get('difficulty', 'medium')
     tags = data.get('tags', [])
     
+    # 验证必填字段
     if not title or not moves:
+        current_app.logger.warning("标题或棋谱步骤为空")
         return make_response(None, "标题和棋谱步骤不能为空", 400)
     
     try:
+        # 确保用户ID是整数
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        
         # 创建新棋谱
         notation = ChessNotation(
             title=title,
@@ -156,7 +223,11 @@ def create_chess_notation():
         db.session.add(notation)
         db.session.commit()
         
+        current_app.logger.info(f"棋谱创建成功，ID: {notation.id}, 标题: {notation.title}")
         return make_response(notation.to_dict())
+    except ValueError as e:
+        current_app.logger.error(f"用户ID格式错误: {current_user_id}, 错误: {str(e)}")
+        return make_response(None, f"用户ID格式错误", 400)
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"创建棋谱失败: {str(e)}")

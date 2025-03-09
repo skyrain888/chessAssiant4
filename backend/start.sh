@@ -100,7 +100,7 @@ check_upload_dir() {
 # 启动开发服务器
 start_dev_server() {
   print_message "正在启动开发服务器..." "${BLUE}"
-  export FLASK_ENV=development
+  export FLASK_DEBUG=True
   export FLASK_APP=app.py
   $PYTHON_CMD app.py
 }
@@ -108,7 +108,7 @@ start_dev_server() {
 # 启动生产服务器
 start_prod_server() {
   print_message "正在启动生产服务器..." "${BLUE}"
-  export FLASK_ENV=production
+  export FLASK_DEBUG=True
   export FLASK_APP=app.py
   
   if command -v gunicorn &> /dev/null; then

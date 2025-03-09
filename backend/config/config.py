@@ -19,8 +19,12 @@ class Config:
     
     # JWT配置
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'jwt_dev_key')
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 3600)))
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 604800)))
+    print(f"JWT_SECRET_KEY: {JWT_SECRET_KEY}")
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 86400)))  # 默认24小时
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(seconds=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 2592000)))  # 默认30天
+    JWT_TOKEN_LOCATION = ['headers']
+    JWT_HEADER_NAME = 'Authorization'
+    JWT_HEADER_TYPE = 'Bearer'
     
     # 上传配置
     UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', os.path.join(basedir, 'uploads'))
@@ -30,6 +34,7 @@ class Config:
     AI_MODEL = os.getenv('AI_MODEL', 'openai')
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+    GEMINI_MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-pro-vision')
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
     
     # 国际象棋工具配置

@@ -109,9 +109,11 @@ def login():
         if not user or not check_password_hash(user.password_hash, password):
             return jsonify({'message': '邮箱或密码错误'}), 401
         
-        # 创建访问令牌和刷新令牌
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        # 创建访问令牌和刷新令牌，确保将用户ID转换为字符串
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
+        
+        current_app.logger.info(f"用户登录成功，用户ID: {user.id}, 邮箱: {user.email}")
         
         return jsonify({
             'access_token': access_token,
@@ -128,8 +130,11 @@ def login():
         # 如果模型不存在，使用演示用户
         if email in USERS and check_password_hash(USERS[email]['password'], password):
             user = USERS[email]
-            access_token = create_access_token(identity=user['id'])
-            refresh_token = create_refresh_token(identity=user['id'])
+            # 确保将用户ID转换为字符串
+            access_token = create_access_token(identity=str(user['id']))
+            refresh_token = create_refresh_token(identity=str(user['id']))
+            
+            current_app.logger.info(f"演示用户登录成功，用户ID: {user['id']}, 邮箱: {user['email']}")
             
             return jsonify({
                 'access_token': access_token,
@@ -151,52 +156,101 @@ def login():
 def refresh():
     """刷新访问令牌"""
     current_user_id = get_jwt_identity()
-    access_token = create_access_token(identity=current_user_id)
+    current_app.logger.info(f"刷新令牌请求，用户ID: {current_user_id}")
     
-    return jsonify({'access_token': access_token}), 200
+    # 记录请求头和请求体
+    auth_header = request.headers.get('Authorization', '')
+    current_app.logger.debug(f"Authorization头: {auth_header}")
+    current_app.logger.debug(f"请求体: {request.get_json()}")
+    
+    try:
+        # 创建新的访问令牌，确保用户ID是字符串
+        # 如果current_user_id已经是字符串，这一步不会有变化
+        # 如果是数字，则会转换为字符串
+        access_token = create_access_token(identity=str(current_user_id))
+        current_app.logger.info(f"访问令牌刷新成功，用户ID: {current_user_id}")
+        
+        # 返回新的访问令牌
+        response_data = {
+            'access_token': access_token
+        }
+        current_app.logger.debug(f"响应数据: {response_data}")
+        
+        return make_response(response_data)
+    except Exception as e:
+        current_app.logger.error(f"刷新令牌失败: {str(e)}")
+        return make_response(None, f"刷新令牌失败: {str(e)}", 500)
 
 # 路由：获取当前用户信息
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    current_app.logger.info(f"获取当前用户信息，用户ID: {current_user_id}, 类型: {type(current_user_id)}")
     
-    if not user:
-        return make_response(None, "用户不存在", 404)
-    
-    return make_response(user.to_dict())
+    try:
+        # 确保用户ID是整数
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        user = User.query.get(user_id)
+        
+        if not user:
+            current_app.logger.warning(f"用户不存在，ID: {current_user_id}")
+            return make_response(None, "用户不存在", 404)
+        
+        current_app.logger.info(f"成功获取当前用户信息，用户ID: {current_user_id}")
+        return make_response(user.to_dict())
+    except ValueError as e:
+        current_app.logger.error(f"用户ID格式错误: {current_user_id}, 错误: {str(e)}")
+        return make_response(None, f"用户ID格式错误", 400)
+    except Exception as e:
+        current_app.logger.error(f"获取当前用户信息失败: {str(e)}")
+        return make_response(None, f"获取当前用户信息失败: {str(e)}", 500)
 
 # 路由：修改密码
 @auth_bp.route('/change-password', methods=['POST'])
 @jwt_required()
 def change_password():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    if not user:
-        return make_response(None, "用户不存在", 404)
-    
-    data = request.json
-    old_password = data.get('old_password')
-    new_password = data.get('new_password')
-    
-    if not old_password or not new_password:
-        return make_response(None, "旧密码和新密码不能为空", 400)
-    
-    # 验证旧密码
-    if not user.verify_password(old_password):
-        return make_response(None, "旧密码错误", 401)
+    current_app.logger.info(f"修改密码请求，用户ID: {current_user_id}, 类型: {type(current_user_id)}")
     
     try:
-        # 更新密码
-        user.password = new_password
-        db.session.commit()
+        # 确保用户ID是整数
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        user = User.query.get(user_id)
         
-        return make_response(None, "密码修改成功")
+        if not user:
+            current_app.logger.warning(f"用户不存在，ID: {current_user_id}")
+            return make_response(None, "用户不存在", 404)
+        
+        data = request.json
+        old_password = data.get('old_password')
+        new_password = data.get('new_password')
+        
+        if not old_password or not new_password:
+            current_app.logger.warning("旧密码或新密码为空")
+            return make_response(None, "旧密码和新密码不能为空", 400)
+        
+        # 验证旧密码
+        if not user.verify_password(old_password):
+            current_app.logger.warning(f"旧密码验证失败，用户ID: {current_user_id}")
+            return make_response(None, "旧密码错误", 401)
+        
+        try:
+            # 更新密码
+            user.password = new_password
+            db.session.commit()
+            current_app.logger.info(f"密码修改成功，用户ID: {current_user_id}")
+            
+            return make_response(None, "密码修改成功")
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"修改密码失败: {str(e)}")
+            return make_response(None, f"修改密码失败: {str(e)}", 500)
+    except ValueError as e:
+        current_app.logger.error(f"用户ID格式错误: {current_user_id}, 错误: {str(e)}")
+        return make_response(None, f"用户ID格式错误", 400)
     except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"修改密码失败: {str(e)}")
+        current_app.logger.error(f"修改密码请求处理失败: {str(e)}")
         return make_response(None, f"修改密码失败: {str(e)}", 500)
 
 # 路由：忘记密码（发送重置邮件）
@@ -223,10 +277,16 @@ def reset_password():
     # 在实际应用中，应该验证令牌并更新密码
     return jsonify({'message': '密码重置成功'}), 200
 
-# 路由：用户登出
+# 路由：注销
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """用户登出"""
-    # 在实际应用中，可以将令牌添加到黑名单
-    return jsonify({'message': '登出成功'}), 200 
+    """用户注销"""
+    current_user_id = get_jwt_identity()
+    current_app.logger.info(f"用户注销请求，用户ID: {current_user_id}, 类型: {type(current_user_id)}")
+    
+    # 这里可以添加令牌到黑名单的逻辑
+    # 例如：jti = get_jwt()['jti']
+    # 将jti添加到黑名单数据库中
+    
+    return make_response(None, "注销成功") 

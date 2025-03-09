@@ -36,29 +36,33 @@ except ImportError:
 def get_profile():
     """获取当前用户的个人资料"""
     current_user_id = get_jwt_identity()
+    current_app.logger.info(f"获取用户资料请求，用户ID: {current_user_id}, 类型: {type(current_user_id)}")
     
     try:
-        # 查询用户
-        user = User.query.get(current_user_id)
+        # 查询用户，确保用户ID是整数
+        # 如果current_user_id是字符串形式的数字，需要转换为整数
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        user = User.query.get(user_id)
         
         if not user:
-            return jsonify({'message': '用户不存在'}), 404
+            current_app.logger.warning(f"用户不存在，ID: {current_user_id}")
+            return make_response(None, "用户不存在", 404)
         
-        return jsonify({
+        current_app.logger.info(f"成功获取用户资料，用户ID: {current_user_id}")
+        return make_response({
             'id': user.id,
             'username': user.username,
             'email': user.email,
             'name': user.name,
             'avatar': user.avatar,
-            'created_at': user.created_at.isoformat() if hasattr(user, 'created_at') else None
-        }), 200
-    except (NameError, AttributeError):
-        # 如果模型不存在，使用演示用户
-        if current_user_id in USERS:
-            user = USERS[current_user_id]
-            return jsonify(user), 200
-        else:
-            return jsonify({'message': '用户不存在'}), 404
+            'created_at': user.created_at.isoformat() if hasattr(user, 'created_at') and user.created_at else None
+        })
+    except ValueError as e:
+        current_app.logger.error(f"用户ID格式错误: {current_user_id}, 错误: {str(e)}")
+        return make_response(None, f"用户ID格式错误", 400)
+    except Exception as e:
+        current_app.logger.error(f"获取用户资料失败: {str(e)}")
+        return make_response(None, f"获取用户资料失败: {str(e)}", 500)
 
 # 路由：更新用户信息
 @user_bp.route('/profile', methods=['PUT'])
@@ -66,29 +70,42 @@ def get_profile():
 def update_profile():
     """更新当前用户的个人资料"""
     current_user_id = get_jwt_identity()
-    data = request.get_json()
+    current_app.logger.info(f"更新用户资料请求，用户ID: {current_user_id}, 类型: {type(current_user_id)}")
+    
+    # 获取请求数据
+    try:
+        data = request.get_json()
+    except Exception as e:
+        current_app.logger.error(f"解析请求数据失败: {str(e)}")
+        return make_response(None, "无效的请求数据格式，请确保发送的是JSON格式", 400)
     
     if not data:
-        return jsonify({'message': '无效的请求数据'}), 400
+        current_app.logger.warning("请求数据为空")
+        return make_response(None, "请求数据不能为空", 400)
     
     try:
-        # 查询用户
-        user = User.query.get(current_user_id)
+        # 查询用户，确保用户ID是整数
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        user = User.query.get(user_id)
         
         if not user:
-            return jsonify({'message': '用户不存在'}), 404
+            current_app.logger.warning(f"用户不存在，ID: {current_user_id}")
+            return make_response(None, "用户不存在", 404)
         
         # 更新用户信息
         if 'name' in data:
             user.name = data['name']
+            current_app.logger.debug(f"更新用户名称: {data['name']}")
         
         if 'avatar' in data:
             user.avatar = data['avatar']
+            current_app.logger.debug(f"更新用户头像: {data['avatar']}")
         
         # 保存到数据库
         db.session.commit()
+        current_app.logger.info(f"用户资料更新成功，用户ID: {current_user_id}")
         
-        return jsonify({
+        return make_response({
             'message': '个人资料更新成功',
             'user': {
                 'id': user.id,
@@ -97,10 +114,15 @@ def update_profile():
                 'name': user.name,
                 'avatar': user.avatar
             }
-        }), 200
-    except (NameError, AttributeError):
-        # 如果模型不存在，返回演示消息
-        return jsonify({'message': '个人资料更新功能暂未实现'}), 501
+        })
+    except ValueError as e:
+        current_app.logger.error(f"用户ID格式错误: {current_user_id}, 错误: {str(e)}")
+        return make_response(None, f"用户ID格式错误", 400)
+    except Exception as e:
+        current_app.logger.error(f"更新用户资料失败: {str(e)}")
+        # 回滚数据库事务
+        db.session.rollback()
+        return make_response(None, f"更新用户资料失败: {str(e)}", 500)
 
 @user_bp.route('/change-password', methods=['POST'])
 @jwt_required()
