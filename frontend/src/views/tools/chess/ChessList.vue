@@ -2,7 +2,7 @@
   <div class="chess-list-container">
     <a-card class="chess-list-card">
       <template #title>
-        <div class="list-header">
+        <div class="card-title">
           <span>棋谱列表</span>
           <a-button type="primary" @click="router.push('/chess/upload')">
             <template #icon><icon-plus /></template>
@@ -11,26 +11,21 @@
         </div>
       </template>
       
-      <a-form layout="inline" class="search-form" @submit.prevent>
-        <a-form-item>
+      <a-form :model="{}" class="search-form" layout="inline" @submit.prevent="handleSearch">
+        <a-form-item field="keyword">
           <a-input v-model="searchKeyword" placeholder="搜索棋谱名称" allow-clear>
-            <template #prefix><icon-search /></template>
+            <template #suffix><icon-search /></template>
           </a-input>
         </a-form-item>
-        
-        <a-form-item>
+        <a-form-item field="difficulty">
           <a-select v-model="filterDifficulty" placeholder="难度" allow-clear style="width: 120px">
             <a-option value="easy">简单</a-option>
             <a-option value="medium">中等</a-option>
             <a-option value="hard">困难</a-option>
           </a-select>
         </a-form-item>
-        
         <a-form-item>
-          <a-button type="primary" @click="handleSearch">
-            <template #icon><icon-search /></template>
-            搜索
-          </a-button>
+          <a-button type="primary" html-type="submit">搜索</a-button>
         </a-form-item>
       </a-form>
       
@@ -47,11 +42,19 @@
       </div>
       
       <a-table
-        v-else
+        :loading="loading"
         :data="chessNotations"
-        :pagination="pagination"
+        :pagination="{
+          total: pagination.total,
+          current: pagination.current,
+          pageSize: pagination.pageSize,
+          showTotal: true,
+          showPageSize: true
+        }"
         @page-change="onPageChange"
         @page-size-change="onPageSizeChange"
+        :bordered="false"
+        stripe
       >
         <template #columns>
           <a-table-column title="名称" data-index="title">
@@ -68,9 +71,9 @@
             </template>
           </a-table-column>
           
-          <a-table-column title="上传时间" data-index="createdAt">
+          <a-table-column title="上传时间" data-index="created_at">
             <template #cell="{ record }">
-              {{ formatDate(record.createdAt) }}
+              {{ formatDate(record.created_at) }}
             </template>
           </a-table-column>
           
@@ -105,6 +108,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { IconPlus, IconSearch, IconEye, IconPlayCircle, IconDelete } from '@arco-design/web-vue/es/icon'
+import http from '@/utils/http'
 
 // 路由
 const router = useRouter()
@@ -113,7 +117,7 @@ const router = useRouter()
 const loading = ref(false)
 const searchKeyword = ref('')
 const filterDifficulty = ref('')
-const chessNotations = ref([])
+const chessNotations = ref<any[]>([])
 
 // 分页
 const pagination = reactive({
@@ -125,79 +129,150 @@ const pagination = reactive({
 })
 
 // 获取难度颜色
-const getDifficultyColor = (difficulty) => {
+const getDifficultyColor = (difficulty: string): string => {
   switch (difficulty) {
-    case 'easy': return 'green'
-    case 'medium': return 'orange'
-    case 'hard': return 'red'
-    default: return 'gray'
+    case 'easy':
+    case 'beginner':
+      return 'green'
+    case 'medium':
+    case 'intermediate':
+      return 'orange'
+    case 'hard':
+    case 'advanced':
+      return 'red'
+    default:
+      return 'blue'
   }
 }
 
 // 获取难度文本
-const getDifficultyText = (difficulty) => {
+const getDifficultyText = (difficulty: string): string => {
   switch (difficulty) {
-    case 'easy': return '简单'
-    case 'medium': return '中等'
-    case 'hard': return '困难'
-    default: return '未知'
+    case 'easy':
+    case 'beginner':
+      return '简单'
+    case 'medium':
+    case 'intermediate':
+      return '中等'
+    case 'hard':
+    case 'advanced':
+      return '困难'
+    default:
+      return '未知'
   }
 }
 
 // 格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return ''
+const formatDate = (dateString: string): string => {
+  if (!dateString) return '未知时间';
   
-  const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    console.error('日期格式化错误:', e);
+    return dateString;
+  }
+}
+
+// 定义API响应类型
+interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+interface ChessNotationItem {
+  id: number;
+  title: string;
+  difficulty: string;
+  created_at: string;
+  updated_at: string;
+  [key: string]: any;
 }
 
 // 加载棋谱数据
 const loadChessNotations = async () => {
   loading.value = true
-  
   try {
-    // 模拟API调用
-    setTimeout(() => {
-      // 模拟数据
-      const mockData = Array.from({ length: 20 }, (_, index) => ({
-        id: index + 1,
-        title: `棋谱示例 ${index + 1}`,
-        difficulty: ['easy', 'medium', 'hard'][Math.floor(Math.random() * 3)],
-        createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString()
-      }))
-      
-      // 过滤数据
-      let filteredData = [...mockData]
-      
-      if (searchKeyword.value) {
-        filteredData = filteredData.filter(item => 
-          item.title.toLowerCase().includes(searchKeyword.value.toLowerCase())
-        )
+    // 构建查询参数
+    const params = {
+      page: pagination.current,
+      size: pagination.pageSize,
+      keyword: searchKeyword.value || undefined,
+      difficulty: filterDifficulty.value || undefined
+    }
+
+    console.log('请求参数:', params)
+
+    // 调用真实API获取棋谱数据
+    const response = await http.get<ApiResponse<any>>('/api/chess/notations', params)
+    
+    console.log('API响应:', response)
+    
+    // 处理响应数据
+    if (response && response.code === 200) {
+      // 检查返回的数据类型
+      if (response.data === null || response.data === undefined) {
+        console.warn('API返回的数据为空')
+        chessNotations.value = []
+        pagination.total = 0
+      } else if (Array.isArray(response.data)) {
+        // 如果是数组，直接使用
+        console.log('API返回数组数据:', response.data)
+        chessNotations.value = response.data
+        pagination.total = response.data.length
+      } else if (typeof response.data === 'object' && response.data !== null) {
+        // 如果是对象，检查是否有items和total字段
+        if (Array.isArray(response.data.items)) {
+          console.log('API返回对象数据，包含items数组:', response.data)
+          chessNotations.value = response.data.items
+          pagination.total = response.data.total || response.data.items.length
+        } else if (Array.isArray(response.data.data)) {
+          // 有些API会在data字段内再嵌套一层data
+          console.log('API返回嵌套data数组:', response.data.data)
+          chessNotations.value = response.data.data
+          pagination.total = response.data.total || response.data.data.length
+        } else {
+          // 如果没有明确的数组字段，尝试将对象转为数组
+          console.warn('API返回的数据结构不符合预期，尝试转换:', response.data)
+          const entries = Object.entries(response.data)
+            .filter(([key]) => !isNaN(Number(key)))
+            .map(([_, value]) => value)
+          
+          if (entries.length > 0) {
+            chessNotations.value = entries
+            pagination.total = entries.length
+          } else {
+            chessNotations.value = []
+            pagination.total = 0
+          }
+        }
+      } else {
+        console.error('API返回的数据格式不支持:', response.data)
+        chessNotations.value = []
+        pagination.total = 0
       }
       
-      if (filterDifficulty.value) {
-        filteredData = filteredData.filter(item => 
-          item.difficulty === filterDifficulty.value
-        )
-      }
-      
-      // 更新数据和分页
-      pagination.total = filteredData.length
-      
-      const start = (pagination.current - 1) * pagination.pageSize
-      const end = start + pagination.pageSize
-      
-      chessNotations.value = filteredData.slice(start, end)
-      loading.value = false
-    }, 500)
+      console.log('处理后的棋谱数据:', chessNotations.value)
+    } else {
+      console.error('加载棋谱数据失败:', response)
+      Message.error(response?.message || '加载棋谱数据失败')
+      chessNotations.value = []
+      pagination.total = 0
+    }
   } catch (error) {
-    console.error('加载棋谱数据失败:', error)
+    console.error('加载棋谱数据出错:', error)
     Message.error('加载棋谱数据失败')
+    chessNotations.value = []
+    pagination.total = 0
+  } finally {
     loading.value = false
   }
 }
@@ -208,33 +283,44 @@ const handleSearch = () => {
   loadChessNotations()
 }
 
-// 页码变化
-const onPageChange = (page) => {
-  pagination.current = page
-  loadChessNotations()
-}
-
-// 每页条数变化
-const onPageSizeChange = (pageSize) => {
-  pagination.pageSize = pageSize
-  loadChessNotations()
-}
-
 // 删除棋谱
-const handleDelete = (id) => {
+const handleDelete = async (id: number) => {
   Modal.warning({
     title: '确认删除',
     content: '确定要删除这个棋谱吗？此操作不可恢复。',
     okText: '确认',
     cancelText: '取消',
-    onOk: () => {
-      // 模拟删除操作
-      setTimeout(() => {
-        chessNotations.value = chessNotations.value.filter(item => item.id !== id)
-        Message.success('删除成功')
-      }, 500)
+    onOk: async () => {
+      try {
+        // 调用真实API删除棋谱
+        const response = await http.del<ApiResponse<any>>(`/api/chess/notations/${id}`)
+        
+        if (response && response.code === 200) {
+          Message.success('删除成功')
+          // 重新加载数据
+          loadChessNotations()
+        } else {
+          console.error('删除棋谱失败:', response)
+          Message.error(response?.message || '删除棋谱失败')
+        }
+      } catch (error) {
+        console.error('删除棋谱出错:', error)
+        Message.error('删除棋谱失败')
+      }
     }
   })
+}
+
+// 页码变化
+const onPageChange = (page: number) => {
+  pagination.current = page
+  loadChessNotations()
+}
+
+// 每页条数变化
+const onPageSizeChange = (pageSize: number) => {
+  pagination.pageSize = pageSize
+  loadChessNotations()
 }
 
 // 初始化
@@ -254,7 +340,7 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
-.list-header {
+.card-title {
   display: flex;
   justify-content: space-between;
   align-items: center;

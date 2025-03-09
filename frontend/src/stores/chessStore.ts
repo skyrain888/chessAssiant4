@@ -55,7 +55,7 @@ export const useChessStore = defineStore('chess', () => {
       queryParams.value = mergedParams
 
       const response = await get<{ data: ChessNotation[]; total: number }>(
-        '/chess/notations',
+        '/api/chess/notations',
         mergedParams
       )
 
@@ -79,17 +79,17 @@ export const useChessStore = defineStore('chess', () => {
 
     try {
       loading.value = true
-      const nextPage = queryParams.value.page + 1
-      
+      const nextPage = Math.ceil(notations.value.length / queryParams.value.size) + 1
+      const params = { ...queryParams.value, page: nextPage }
+
       const response = await get<{ data: ChessNotation[]; total: number }>(
-        '/chess/notations',
-        { ...queryParams.value, page: nextPage }
+        '/api/chess/notations',
+        params
       )
 
       if (response) {
         notations.value = [...notations.value, ...response.data]
         total.value = response.total
-        queryParams.value.page = nextPage
       }
 
       return response
@@ -105,7 +105,7 @@ export const useChessStore = defineStore('chess', () => {
   const getNotationById = async (id: number) => {
     try {
       loading.value = true
-      const response = await get<ChessNotation>(`/chess/notations/${id}`)
+      const response = await get<ChessNotation>(`/api/chess/notations/${id}`)
       
       if (response) {
         currentNotation.value = response
@@ -124,7 +124,7 @@ export const useChessStore = defineStore('chess', () => {
   const createNotation = async (notation: Partial<ChessNotation>) => {
     try {
       loading.value = true
-      const response = await post<ChessNotation>('/chess/notations', notation)
+      const response = await post<ChessNotation>('/api/chess/notations', notation)
       
       if (response) {
         // 更新列表
@@ -158,7 +158,7 @@ export const useChessStore = defineStore('chess', () => {
         throw new Error(`文件大小不能超过 ${maxUploadSize}MB`)
       }
       
-      const result = await upload('/chess/upload', file, {
+      const result = await upload('/api/chess/upload', file, {
         validateFileType: false, // 已经手动验证过
         validateFileSize: false  // 已经手动验证过
       })
@@ -178,7 +178,7 @@ export const useChessStore = defineStore('chess', () => {
       parseLoading.value = true
       
       const response = await post<{ moves: string }>(
-        '/chess/parse',
+        '/api/chess/parse',
         { image_url: imageUrl, model }
       )
       

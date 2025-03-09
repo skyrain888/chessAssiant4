@@ -5,7 +5,7 @@
         <a-card class="viewer-header">
           <template #title>
             <div class="flex items-center">
-              <icon-chess class="mr-2" />
+              <icon-apps class="mr-2" />
               <span>棋谱查看器</span>
             </div>
           </template>
@@ -130,9 +130,8 @@ import { useRoute } from 'vue-router'
 import { useChessStore } from '@/stores/chessStore'
 import { useNotification } from '@/composables/useNotification'
 import ChessBoard from '@/components/chess/ChessBoard.vue'
-import type { ChessNotation } from '@/types/custom-types'
 import {
-  IconChess,
+  IconApps,
   IconDashboard,
   IconCodeBlock,
   IconRefresh,
@@ -141,6 +140,9 @@ import {
   IconExperiment,
   IconInfoCircle
 } from '@arco-design/web-vue/es/icon'
+
+// 导入类型
+import type { ChessNotation } from '@/stores/chessStore'
 
 // 路由
 const route = useRoute()
